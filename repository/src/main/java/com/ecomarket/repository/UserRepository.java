@@ -1,6 +1,7 @@
 package com.ecomarket.repository;
 
 import com.ecomarket.repository.entities.User;
+import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,35 +25,79 @@ public class UserRepository {
     }
 
     public User save(User user) {
-        String sql = user.getId() == null
-                ? "INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?) RETURNING id"
-                : "UPDATE users SET username = ?, email = ?, password = ?, role = ? WHERE id = ?";
-
-        try (
-                Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(sql)
-        ) {
-            stmt.setString(1, user.getUsername());
-            stmt.setString(2, user.getEmail());
-            stmt.setString(3, user.getPassword());
-            stmt.setString(4, user.getRole());
-            if (user.getId() != null) stmt.setLong(5, user.getId());
-
-            if (user.getId() == null) {
+        LOGGER.debug("Saving user: {}", user.getEmail());
+        if (user.getId() == null) {
+            // Hash password before saving
+            String hashedPassword = BCrypt.hashpw(user.getPassword(), BCrypt.gensalt());
+            String sql = "INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?) RETURNING id";
+            try (
+                    Connection conn = dataSource.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(sql)
+            ) {
+                stmt.setString(1, user.getUsername());
+                stmt.setString(2, user.getEmail());
+                stmt.setString(3, hashedPassword);
+                stmt.setString(4, user.getRole());
                 ResultSet rs = stmt.executeQuery();
                 if (rs.next()) {
                     user.setId(rs.getLong("id"));
+                    user.setPassword(rs.getString("password"));
+                    LOGGER.info("User saved: {}", user.getEmail());
+                    return user;
                 }
-                LOGGER.debug("Persisted new user: {}", user.getUsername());
-            } else {
-                stmt.executeUpdate();
-                LOGGER.debug("Updated user: {}", user.getUsername());
+                throw new RuntimeException("Failed to retrieve generated ID");
+            } catch (SQLException e) {
+                LOGGER.error("Failed to save user: {}", user.getEmail(), e);
+                throw new RuntimeException("Failed to save user: " + e.getMessage(), e);
             }
-            return user;
+        } else {
+            // Update existing user
+            String sql = "UPDATE users SET username = ?, email = ?, password = ?, role = ? WHERE id = ?";
+            try (
+                    Connection conn = dataSource.getConnection();
+                    PreparedStatement stmt = conn.prepareStatement(sql)
+            ) {
+                String hashedPassword = user.getPassword().startsWith("$2a$")
+                        ? user.getPassword()
+                        : BCrypt.hashpw(user.getPassword(), BCrypt.gensalt());
+                stmt.setString(1, user.getUsername());
+                stmt.setString(2, user.getEmail());
+                stmt.setString(3, hashedPassword);
+                stmt.setString(4, user.getRole());
+                stmt.setLong(5, user.getId());
+                stmt.executeUpdate();
+                user.setPassword(hashedPassword);
+                LOGGER.info("user updated: {}", user.getEmail());
+                return user;
+            } catch (SQLException e) {
+                LOGGER.error("Failed to update user: {}", user.getEmail(), e);
+                throw new RuntimeException("Failed to update user: " + e.getMessage(), e);
+            }
+        }
+    }
+
+    public Optional<User> findByEmail(String email) {
+        String sql = "SELECT id, username, email, password, role FROM users WHERE email = ?";
+        try (
+                Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, email);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                User user = new User();
+                user.setId(rs.getLong("id"));
+                user.setUsername(rs.getString("username"));
+                user.setEmail(rs.getString("email"));
+                user.setPassword(rs.getString("password"));
+                user.setRole(rs.getString("role"));
+                LOGGER.info("User found by email: {}", user.getEmail());
+                return Optional.of(user);
+            }
+            LOGGER.info("No user found with email: {}", email);
+            return Optional.empty();
         } catch (SQLException e) {
-            LOGGER.error("Failed to save user: {}. SQL State: {}, Error Code: {}, Message: {}",
-                    user.getUsername(), e.getSQLState(), e.getErrorCode(), e.getMessage(), e);
-            throw new RuntimeException("Failed to save user: " + e.getMessage(), e);
+            LOGGER.error("Failed to find user by email: {}", email, e);
+            throw new RuntimeException("Failed to find user by email: " + e.getMessage(), e);
         }
     }
 
