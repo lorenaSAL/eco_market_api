@@ -2,6 +2,7 @@ package com.ecomarket.server.resources;
 
 import com.ecomarket.repository.OrderRepository;
 import com.ecomarket.repository.entities.Order;
+import com.ecomarket.server.filter.JwtSecured;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -48,6 +49,7 @@ public class OrderResource {
 
     @GET
     @Path("/user/{userId}")
+    @JwtSecured
     @SuppressWarnings("unused")
     public List<Order> getOrdersByUserId(@PathParam("userId") Long userId) {
         LOGGER.debug("Retrieving orders for user id: {}", userId);

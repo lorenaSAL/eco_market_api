@@ -2,6 +2,7 @@ package com.ecomarket.server;
 
 
 import com.ecomarket.server.filter.CorsFilter;
+import com.ecomarket.server.filter.JwtFilter;
 import com.ecomarket.server.provider.CustomObjectMapperProvider;
 import com.ecomarket.server.resources.*;
 import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
@@ -28,11 +29,13 @@ public class MainServer {
 
         ResourceConfig config = new ResourceConfig();
         config.register(CorsFilter.class);
+        config.register(JwtFilter.class);
         config.register(ProductResource.class);
         config.register(UserResource.class);
         config.register(CartResource.class);
         config.register(CartItemResource.class);
         config.register(OrderResource.class);
+        config.register(AuthResource.class);
         config.register(CustomObjectMapperProvider.class);
 
         GrizzlyHttpServerFactory.createHttpServer(URI.create(BASE_URI), config);
